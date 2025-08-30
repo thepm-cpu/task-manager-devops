@@ -49,10 +49,10 @@ jobs:
         docker build -t task-manager-frontend:latest ./frontend
         docker build -t task-manager-backend:latest ./backend
         docker build -t task-manager-nginx:latest ./nginx
-        docker-compose -f docker-compose.prod.yml up -d
+        docker compose -f docker-compose.prod.yml up -d
         sleep 15
         curl -f http://localhost/health || exit 1
-        docker-compose -f docker-compose.prod.yml down
+        docker compose -f docker-compose.prod.yml down
 
   deploy:
     needs: test
@@ -70,6 +70,17 @@ jobs:
         key: ${{ secrets.PROD_SSH_KEY }}
         port: ${{ secrets.PROD_PORT }}
         script: |
+          # Ensure Docker Compose is installed
+          if ! command -v docker-compose &> /dev/null; then
+            echo "Installing Docker Compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+          fi
+          
+          # Verify installation
+          docker-compose --version
+          
           cd /home/ubuntu/task-manager-prod
           
           # Backup current deployment
