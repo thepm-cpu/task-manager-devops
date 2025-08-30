@@ -1,0 +1,7 @@
+# Minimal test frontend
+FROM nginx:alpine
+
+# Create a simple test page
+RUN echo '<h1>Frontend Container Working!</h1><p>If you see this, the frontend container is running.</p>' > /usr/share/nginx/html/index.html
+
+EXPOSE 80

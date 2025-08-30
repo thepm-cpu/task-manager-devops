@@ -49,15 +49,19 @@ fi
 print_status "Using compose file: $COMPOSE_FILE"
 print_status "Target port: $PORT"
 
-# Pull latest code
-print_status "Pulling latest code from branch: $BRANCH"
-git fetch origin
-git checkout $BRANCH
-git pull origin $BRANCH
+# Only pull git if we're in a git repository and have a remote
+if [ -d ".git" ] && git remote get-url origin > /dev/null 2>&1; then
+    print_status "Pulling latest code from branch: $BRANCH"
+    git fetch origin 2>/dev/null || print_warning "Could not fetch from remote, using local code"
+    git checkout $BRANCH 2>/dev/null || print_warning "Could not checkout branch $BRANCH, using current branch"
+    git pull origin $BRANCH 2>/dev/null || print_warning "Could not pull from remote, using local code"
+else
+    print_warning "Not in a Git repository or no remote configured. Using local code."
+fi
 
 # Stop existing containers
 print_status "Stopping existing containers..."
-docker-compose -f $COMPOSE_FILE down || print_warning "No existing containers to stop"
+docker-compose -f $COMPOSE_FILE down 2>/dev/null || print_warning "No existing containers to stop"
 
 # Remove unused images and containers
 print_status "Cleaning up unused Docker resources..."
@@ -78,16 +82,19 @@ sleep 15
 # Health check
 print_status "Performing health check..."
 for i in {1..10}; do
-    if curl -f -s http://localhost:$PORT/health > /dev/null; then
+    if curl -f -s http://localhost:$PORT/health > /dev/null 2>&1; then
         print_success "Health check passed!"
         break
     elif [ $i -eq 10 ]; then
         print_error "Health check failed after 10 attempts"
-        docker-compose -f $COMPOSE_FILE logs
+        print_status "Container status:"
+        docker-compose -f $COMPOSE_FILE ps
+        print_status "Container logs:"
+        docker-compose -f $COMPOSE_FILE logs --tail=50
         exit 1
     else
         print_status "Health check attempt $i/10 failed, retrying..."
-        sleep 3
+        sleep 5
     fi
 done
 
