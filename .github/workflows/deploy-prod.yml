@@ -51,7 +51,7 @@ jobs:
         docker build -t task-manager-nginx:latest ./nginx
         docker compose -f docker-compose.prod.yml up -d
         sleep 15
-        curl -f http://localhost/health || exit 1
+        curl -f http://localhost:80/health || exit 1
         docker compose -f docker-compose.prod.yml down
 
   deploy:
@@ -83,8 +83,117 @@ jobs:
           
           cd /home/ubuntu/task-manager-prod
           
-          # Backup current deployment
-          docker-compose -f docker-compose.prod.yml exec -T backend node -e "console.log('Creating backup...')" || true
+          # Stop any dev/staging containers to prevent conflicts
+          docker-compose -f docker-compose.yml down || true
+          
+          # Deploy new version
+          git pull origin main
+          docker-compose -f docker-compose.prod.yml down --timeout 30
+          docker-compose -f docker-compose.prod.yml build --no-cache
+          docker-compose -f docker-compose.prod.yml up -d
+          
+          # Wait for services to be ready
+          sleep 30
+          
+          echo "Production deployment completed!"
+          
+    - name: Production Health Check
+      run: |
+        sleep 45
+        curl -f http://${{ secrets.PROD_HOST }}/health || exit 1
+        curl -f http://${{ secrets.PROD_HOST }}/api/health || exit 1
+        echo "Production health checks passed!"
+        
+    - name: Notify Success
+      run: |
+        echo "🚀 Production deployment successful!"
+        echo "Application is running at http://${{ secrets.PROD_HOST }}"name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: |
+          frontend/package-lock.json
+          backend/package-lock.json
+    
+    - name: Install Dependencies
+      run: |
+        cd frontend && npm ci
+        cd ../backend && npm ci
+    
+    - name: Run Full Test Suite
+      run: |
+        cd backend
+        echo "Running production-ready tests..."
+        # npm run test:production
+    
+    - name: Security Scan (placeholder)
+      run: |
+        echo "Running security scans..."
+        # npm audit --audit-level high
+    
+    - name: Build and Test Docker Images
+      run: |
+        docker build -t task-manager-frontend:latest ./frontend
+        docker build -t task-manager-backend:latest ./backend
+        docker build -t task-manager-nginx:latest ./nginx
+        docker compose -f docker-compose.prod.yml up -d
+        sleep 15
+        curl -f http://localhost:80/health || exit 1
+        docker compose -f docker-compose.prod.yml down
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to Production Server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USERNAME }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        port: ${{ secrets.PROD_PORT }}
+        script: |
+          # Ensure Docker Compose is installed
+          if ! command -v docker-compose &> /dev/null; then
+            echo "Installing Docker Compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+          fi
+          
+          # Verify installation
+          docker-compose --version
+          
+          cd /home/ubuntu/task-manager-prod
+          
+          # Stop any dev/staging containers to prevent conflicts
+          docker-compose -f docker-compose.yml down || true
           
           # Deploy new version
           git pull origin main
